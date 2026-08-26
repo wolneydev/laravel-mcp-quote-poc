@@ -3,7 +3,6 @@
 namespace App\Mcp\Servers;
 
 use App\Mcp\Tools\HealthCheckTool;
-use App\Mcp\Tools\ProcessLearningThemeTool;
 use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
@@ -20,7 +19,6 @@ class ApplicationServer extends Server
      */
     protected array $tools = [
         HealthCheckTool::class,
-        ProcessLearningThemeTool::class,
     ];
 
     protected array $resources = [
