@@ -1,272 +1,114 @@
-# Quote MCP
+<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
-Laravel sales domain with a REST API and an MCP server that share one quote engine.
+<p align="center">
+<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
+</p>
 
-Local app: [http://localhost:8890](http://localhost:8890). Docker, PostgreSQL, and bootstrap details: [`.specs/SETUP.md`](.specs/SETUP.md). Task specs: [`.specs/tasks/`](.specs/tasks/).
+## This project
 
----
+This application is a quote sales domain with a REST API and an MCP server that share one quote engine.
 
-# How this quote system works
+Read the [solution overview](.specs/SOLUTION-OVERVIEW.md) for domain maps, quote lifecycle, MCP tools, and bearer-token authentication. Setup and task specs live under [`.specs/`](.specs/).
 
-This project is a small sales domain with two doors into the same house.
+## Installation
 
-One door is a REST API. Sellers and operators can manage products, customers, login accounts, and quotes through ordinary HTTP endpoints.
+The stack runs in Docker Compose: PHP 8.3-FPM, Nginx on host port **8890**, and PostgreSQL 16 on host port **5439**. You need Docker with Compose and those two ports free.
 
-The other door is MCP. An LLM client talks to a quote server, looks up customers and products by name or public code, and asks the application to persist a quote report. That report is meant for a human to review and approve. Generating a report does **not** approve the quote.
+```bash
+git clone <repository-url>
+cd markdown-processing-mcp
 
-Both doors create quotes the same way. Controllers and MCP tools do not invent their own math. They call `CreateQuoteAction`, which uses `QuotePricingService`, writes the quote and its items in a single database transaction, and snapshots product names, units, and prices onto each line. If the catalog price changes tomorrow, yesterday’s quote still shows what was actually offered.
+cp .env.example .env
 
-There is no `users` table in this flow. `accounts` is the identity table. Sellers log in (or authenticate over MCP) as `VEN-*` accounts. Customers have a business profile in `customers` and, when they can log in, a matching `CLI-*` account.
-
----
-
-## The pieces, in the order they were built
-
-The work was split into six modules. Each one is useful on its own, but the later ones assume the earlier ones exist.
-
-**Products** are a tiny catalog. A product has a stable public code (`PROD-000001`), a name, a unit, a decimal price, a three-letter currency, and an active flag. Search works by name or code because a seller (or an LLM) rarely starts with a database id.
-
-**Customers** are business profiles, not logins. A customer has a public code (`CUST-000001`), a name, optional document and contact fields, and an active flag. Passwords do not live here. Search works by name, code, or document so MCP can resolve what a seller typed.
-
-**Accounts** are the people who can authenticate. A seller account has type `seller`, a `VEN-*` code, and no customer link. A customer account has type `customer`, a `CLI-*` code, and exactly one customer. Email is unique and lowercase. Passwords are hashed and never returned by the API. Account age in days is calculated from `created_at`; it is not stored.
-
-**Quotes** are the commercial document. A quote always points at two accounts: the seller who owns it and the customer who should approve it. Status moves in a straight line: `draft` → `pending_approval` → `approved` or `rejected`. Only drafts can still change products and quantities.
-
-**MCP quote reports** are a conversation-friendly way to create and reread those quotes. The LLM is guided by a prompt (`/generate-quote-report`). The prompt never prices anything. Tools search the catalog, resolve public codes, then call the same create-quote action as REST.
-
-**Static bearer tokens** exist because an LLM client talking over HTTP is not a logged-in browser session. The client sends a raw token in `Authorization`. Laravel stores only the SHA-256 hash, checks it in constant time, and attaches a configured active seller account to the request. Tools still check that the user is a seller.
-
-Seeders for products, customers, and accounts are idempotent: they `upsert` on public `code`, so you can seed twice without duplicates.
-
----
-
-## Domain map
-
-Public codes are the language humans and models should use. Internal ids stay inside the application.
-
-```text
-PROD-*   product in the catalog
-CUST-*   customer profile (company / person)
-VEN-*    seller account (login identity)
-CLI-*    customer account (login identity, 1:1 with a customer)
-QUO-*    persisted quote number
+docker compose up -d --build
 ```
 
-How those records connect:
+Wait until Postgres is healthy, then install PHP dependencies and finish Laravel bootstrap **inside the app container**:
 
-```mermaid
-flowchart LR
-    subgraph Catalog
-        Product["Product<br/>PROD-*"]
-    end
-
-    subgraph People
-        Customer["Customer<br/>CUST-*"]
-        SellerAcc["Seller Account<br/>VEN-*"]
-        CustAcc["Customer Account<br/>CLI-*"]
-        Customer -->|"one optional login"| CustAcc
-    end
-
-    subgraph QuoteDoc["Quote QUO-*"]
-        Quote["Quote header<br/>seller + customer + total"]
-        Item["Quote items<br/>snapshots of product + price"]
-        Quote --> Item
-    end
-
-    SellerAcc -->|"seller_account_id"| Quote
-    CustAcc -->|"customer_account_id"| Quote
-    Product -->|"product_id + copied scalars"| Item
+```bash
+docker compose exec app composer install
+docker compose exec app php artisan key:generate --no-interaction
+docker compose exec app php artisan migrate --seed --no-interaction
 ```
 
-A customer account cannot sell. A seller account cannot be the customer on a quote. Seller and customer on one quote cannot be the same account. Mixed currencies on one quote are rejected. Duplicate products on one request are rejected.
+The app is then at [http://localhost:8890](http://localhost:8890). From the host, Postgres is `localhost:5439` with the credentials in `.env` (`laravel` / `secret` by default). Inside Compose, the app uses `DB_HOST=postgres` and port `5432`.
 
----
+### Quote MCP token
 
-## Quote lifecycle
+Authenticated quote tools talk to `http://localhost:8890/mcp/quotes`. Laravel stores only a SHA-256 hash. Generate a raw token, hash it, then keep the raw value in the MCP client environment only:
 
-A new quote starts as a draft. Submit is the seller asking for a decision. Approve and reject are the customer-side decisions. Historical money comes from columns on `quote_items`, never from a live catalog lookup.
+```bash
+php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
+# export MCP_QUOTE_TOKEN=<that-value>
 
-```mermaid
-stateDiagram-v2
-    [*] --> draft: create quote
-    draft --> draft: edit products / quantities
-    draft --> pending_approval: submit
-    pending_approval --> approved: approve
-    pending_approval --> rejected: reject
-    approved --> [*]
-    rejected --> [*]
+php -r "echo hash('sha256', getenv('MCP_QUOTE_TOKEN')), PHP_EOL;"
 ```
 
-Creation is one transaction:
+Put the hash in `.env` as `MCP_QUOTE_TOKEN_HASH`. Set `MCP_QUOTE_SELLER_ACCOUNT_CODE` to an active seller from the seeder (default `VEN-000001`). Put the **raw** token in the MCP client's `MCP_QUOTE_TOKEN`. Do not commit either secret.
 
-1. Validate seller, customer, products, quantities, and currency.
-2. Generate a unique quote number (`QUO-YYYY-…`) in a concurrency-safe way.
-3. Copy current product price, code, name, and unit onto each line.
-4. Compute `line_total = quantity × unit_price` and `quote.total = sum(line totals)`.
-5. Persist the header and all items together. If any item fails, nothing is kept.
+`.mcp.json` already points the quote server at the HTTP endpoint and sends `Authorization: Bearer ${env:MCP_QUOTE_TOKEN}`. Restart the MCP client after setting the env var.
 
-Callers never supply `unit_price`, `line_total`, or `total`. The application is the source of truth for money.
+The general application MCP (health check) still uses stdio:
 
----
-
-## Two doors, one quote engine
-
-REST lives in `routes/api.php`. MCP lives in `routes/ai.php`. Quote math lives in the domain layer.
-
-```mermaid
-flowchart TB
-    subgraph Clients
-        RESTClient["HTTP / REST client"]
-        LLM["LLM + MCP client"]
-    end
-
-    subgraph Laravel
-        API["Quote API<br/>/api/quotes"]
-        MCP["Quote MCP<br/>/mcp/quotes"]
-        Action["CreateQuoteAction"]
-        Pricing["QuotePricingService"]
-        DB[(PostgreSQL)]
-    end
-
-    RESTClient --> API
-    LLM --> MCP
-    API --> Action
-    MCP --> Action
-    Action --> Pricing
-    Action --> DB
+```bash
+docker compose exec -T app php artisan mcp:start application
 ```
 
-That split is the main design rule. MCP is not a second quoting system. It is a lookup-and-report front end on top of the same persistence.
+### Tests
 
-There is also a small general MCP server at `/mcp` (health check). Quote work goes to `/mcp/quotes`.
-
----
-
-## How a seller talks to MCP
-
-The user-facing command is `/generate-quote-report`. That is an MCP **prompt**, not an HTTP route and not the tool that writes the database.
-
-The model is supposed to collect missing pieces, search when a name is ambiguous, and only then call `generate_quote_report`. If two customers share a similar name, the tools return candidates. They do not guess.
-
-```mermaid
-flowchart TD
-    User["Seller in the LLM client"] --> Prompt["Prompt: generate-quote-report<br/>slash command /generate-quote-report"]
-
-    Prompt --> Gather["Collect seller, customer,<br/>products, quantities"]
-
-    Gather --> SearchC["Tool: search_customers"]
-    Gather --> SearchP["Tool: search_products"]
-
-    SearchC --> Ambiguous{Exactly one<br/>quote-ready match?}
-    SearchP --> Ambiguous
-
-    Ambiguous -->|no| Ask["Ask the user or show candidates.<br/>Do not create a quote."]
-    Ambiguous -->|yes| Generate["Tool: generate_quote_report"]
-
-    Generate --> Authz["Authenticated seller must match<br/>the requested VEN-* account"]
-    Authz --> Action["CreateQuoteAction + QuotePricingService"]
-    Action --> Saved["Quote saved as draft<br/>status is not approved"]
-    Saved --> Report["Structured report + approval_summary"]
-
-    Report --> Later["Later: get_quote_report<br/>by quote id or QUO-* number"]
-    Later --> Snapshot["Same persisted prices.<br/>Catalog changes do not rewrite history."]
+```bash
+docker compose exec app php artisan test --compact
 ```
 
-Typical inputs the model (or the tool) can accept:
+## About Laravel
 
-- Seller: `VEN-000001` (or inferred from the authenticated MCP user).
-- Customer: `CUST-*`, `CLI-*`, or a unique name.
-- Product: `PROD-*` or a unique name.
-- Quantity greater than zero per line.
-- Optional `valid_until` and `notes`.
+Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
 
-A customer is quote-ready only when the profile is active **and** it has an active customer account. Searching customers through MCP returns that account code so the rest of the flow can stay on public identifiers.
+- [Simple, fast routing engine](https://laravel.com/docs/routing).
+- [Powerful dependency injection container](https://laravel.com/docs/container).
+- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
+- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
+- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
+- [Robust background job processing](https://laravel.com/docs/queues).
+- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
 
----
+Laravel is accessible, powerful, and provides tools required for large, robust applications.
 
-## Authentication for the quote MCP
+## Learning Laravel
 
-Local `php artisan mcp:start quotes` is stdio. It never hits the HTTP middleware, so `$request->user()` is empty. Authenticated quote generation uses the **web** endpoint.
+Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
 
-The Laravel app never stores the raw token. The MCP client never puts the token in the prompt or in tool arguments.
+In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
 
-```mermaid
-sequenceDiagram
-    participant Client as MCP client
-    participant MW as AuthenticateQuoteMcp
-    participant Cfg as config/mcp.php
-    participant Acc as Seller Account
-    participant Tools as Quote tools
+You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
 
-    Client->>MW: POST /mcp/quotes<br/>Authorization: Bearer raw-token
-    MW->>MW: SHA-256 of the bearer token
-    MW->>Cfg: expected hash + VEN-* code
-    alt missing or wrong token, or hash not configured
-        MW-->>Client: 401
-    else hashes match hash_equals
-        MW->>Acc: find active seller by public code
-        alt not an active VEN-* seller
-            MW-->>Client: 401
-        else
-            MW->>Tools: request user = that Account
-            Tools-->>Client: search / generate / get report
-        end
-    end
+## Agentic Development
+
+Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+
+```bash
+composer require laravel/boost --dev
+
+php artisan boost:install
 ```
 
-On the server: `MCP_QUOTE_TOKEN_HASH` and `MCP_QUOTE_SELLER_ACCOUNT_CODE`.
+Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
 
-On the client: `MCP_QUOTE_TOKEN` (the raw secret).
+## Contributing
 
-Middleware authenticates. `RequiresSellerAccount` still authorizes. Throttling stays on the route. A customer account configured as the MCP identity is rejected. An inactive seller is rejected.
+Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
 
----
+## Code of Conduct
 
-## What each MCP tool is for
+In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
 
-| Name | Role |
-| --- | --- |
-| `search_products` | Find active products by name or code. Cap results (max 10). Prefer exact codes. |
-| `search_customers` | Find customers plus their `CLI-*` account. Never return passwords. |
-| `generate_quote_report` | Resolve codes, validate, persist one quote, return the report. |
-| `get_quote_report` | Load by id or `QUO-*` number. Read stored money, do not reprice. |
-| `generate-quote-report` | Prompt only. Teaches the model the workflow above. |
+## Security Vulnerabilities
 
-Errors are meant to be specific: not found, ambiguous, inactive, wrong account type, bad quantity, duplicate product, mixed currency, unauthorized seller.
+If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
 
----
+## License
 
-## REST surface (the operational door)
-
-These modules also have CRUD (and quote workflow) under `/api`:
-
-- Products: list with search/code/active, create, show, update, delete/inactivate.
-- Customers: same idea, plus exact document and email filters.
-- Accounts: list by type, search, create with generated `VEN-*` / `CLI-*` codes.
-- Quotes: create, show, list, edit while draft, submit, approve, reject.
-
-REST and MCP share the same tables and the same quote action. If you seed mock data, you can exercise either door against the same catalog.
-
----
-
-## What this system deliberately does not do
-
-No taxes, shipping, inventory, product variants, CRM, PDFs, email delivery, or automatic LLM approval. No OAuth or Sanctum for the quote MCP token (one static hashed bearer token, one seller identity). No `user_id`. No JSON metadata columns on these tables.
-
-Those omissions keep the quote report small enough that an agent can create it without inventing commercial rules the business has not specified yet.
-
----
-
-## A short walk-through
-
-Imagine a seller in Cursor or another MCP client:
-
-1. The client is already configured with `MCP_QUOTE_TOKEN` and talks to `/mcp/quotes`.
-2. The seller types `/generate-quote-report` and says they need a quote for Acme, three premium keyboards.
-3. The model calls `search_customers` with “Acme”. One active customer with a `CLI-*` account comes back.
-4. It calls `search_products` with “premium keyboard”. One active `PROD-*` comes back.
-5. It calls `generate_quote_report` with the seller’s `VEN-*` code, that customer, that product, and quantity 3.
-6. Laravel hashes the bearer token, attaches `VEN-000001` (or whichever seller is configured), checks the seller is allowed to create that quote, snapshots the current keyboard price, and stores `QUO-2026-000001` as a **draft**.
-7. The model returns a report. The seller can later fetch it with `get_quote_report`. Approval still happens through the quote workflow, not by the act of generating the report.
-
-That is the whole solution: a catalog and identities with public codes, a quote engine that snapshots prices, and an authenticated MCP front end that searches in natural language and then writes the same quote a REST client would write.
+The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
