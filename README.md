@@ -7,6 +7,62 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## This project
+
+This application is a quote sales domain with a REST API and an MCP server that share one quote engine.
+
+Read the [solution overview](.specs/SOLUTION-OVERVIEW.md) for domain maps, quote lifecycle, MCP tools, and bearer-token authentication. Setup and task specs live under [`.specs/`](.specs/).
+
+## Installation
+
+The stack runs in Docker Compose: PHP 8.3-FPM, Nginx on host port **8890**, and PostgreSQL 16 on host port **5439**. You need Docker with Compose and those two ports free.
+
+```bash
+git clone <repository-url>
+cd markdown-processing-mcp
+
+cp .env.example .env
+
+docker compose up -d --build
+```
+
+Wait until Postgres is healthy, then install PHP dependencies and finish Laravel bootstrap **inside the app container**:
+
+```bash
+docker compose exec app composer install
+docker compose exec app php artisan key:generate --no-interaction
+docker compose exec app php artisan migrate --seed --no-interaction
+```
+
+The app is then at [http://localhost:8890](http://localhost:8890). From the host, Postgres is `localhost:5439` with the credentials in `.env` (`laravel` / `secret` by default). Inside Compose, the app uses `DB_HOST=postgres` and port `5432`.
+
+### Quote MCP token
+
+Authenticated quote tools talk to `http://localhost:8890/mcp/quotes`. Laravel stores only a SHA-256 hash. Generate a raw token, hash it, then keep the raw value in the MCP client environment only:
+
+```bash
+php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
+# export MCP_QUOTE_TOKEN=<that-value>
+
+php -r "echo hash('sha256', getenv('MCP_QUOTE_TOKEN')), PHP_EOL;"
+```
+
+Put the hash in `.env` as `MCP_QUOTE_TOKEN_HASH`. Set `MCP_QUOTE_SELLER_ACCOUNT_CODE` to an active seller from the seeder (default `VEN-000001`). Put the **raw** token in the MCP client's `MCP_QUOTE_TOKEN`. Do not commit either secret.
+
+`.mcp.json` already points the quote server at the HTTP endpoint and sends `Authorization: Bearer ${env:MCP_QUOTE_TOKEN}`. Restart the MCP client after setting the env var.
+
+The general application MCP (health check) still uses stdio:
+
+```bash
+docker compose exec -T app php artisan mcp:start application
+```
+
+### Tests
+
+```bash
+docker compose exec app php artisan test --compact
+```
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
