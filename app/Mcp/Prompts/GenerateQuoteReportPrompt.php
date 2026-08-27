@@ -56,7 +56,7 @@ Missing values are acceptable. Collect them conversationally when needed.
 
 ## Tool usage
 
-- `search_customers`: find a Customer and related `CLI-*` account from name, `CUST-*` code, document, or `CLI-*` code.
+- `search_customers`: find a Customer and related `CLI-*` account from name, `CUST-*` code, document, or `CLI-*` code. Document may be used as lookup input; do not expect tax documents, emails, phones, or contact names in tool results.
 - `search_products`: find a Product from partial name or `PROD-*` code.
 - `generate_quote_report`: persist the quote. Pass `seller_account_code`, `customer`, `items` (`product` + `quantity`), and optional `valid_until` and `notes`. Never send `unit_price`, `line_total`, or `total`.
 - `get_quote_report`: retrieve a previously persisted report by `quote_id` or `quote_number`.

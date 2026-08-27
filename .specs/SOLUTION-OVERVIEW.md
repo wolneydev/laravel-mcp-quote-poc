@@ -28,6 +28,8 @@ The work was split into six modules. Each one is useful on its own, but the late
 
 **Static bearer tokens** exist because an LLM client talking over HTTP is not a logged-in browser session. The client sends a raw token in `Authorization`. Laravel stores only the SHA-256 hash, checks it in constant time, and attaches a configured active seller account to the request. Tools still check that the user is a seller.
 
+**Vendor privacy** is a constraint on the MCP door, not a second quoting system. Tool results go to the MCP client and then into the LLM vendor conversation. Laravel withholds tax documents and contact PII from those payloads, redacts them from default logs, and still prices quotes from the database. Retention, training, and data-processing terms are contractual/client configuration; the application cannot enforce them on the vendor.
+
 Seeders for products, customers, and accounts are idempotent: they `upsert` on public `code`, so you can seed twice without duplicates.
 
 ---
@@ -214,12 +216,48 @@ Middleware authenticates. `RequiresSellerAccount` still authorizes. Throttling s
 
 ---
 
+## Quote MCP and the LLM vendor (privacy)
+
+Quote MCP is a third-party LLM data path. After Laravel returns a tool result, the MCP client typically includes that result in the conversation sent to the AI vendor. Local `stdio` (`php artisan mcp:start quotes`) and the authenticated web endpoint (`/mcp/quotes`) have the same payload exposure once the client forwards tool results to the model.
+
+Laravel authenticates the client and minimizes what the model sees. It cannot see, limit, or delete what the vendor retains. Retention, training, evaluation, and data residency are contractual and client-configuration duties, not application runtime checks.
+
+### Fields allowed to reach the LLM
+
+- Customer search / ambiguous candidates: `customer_id`, `customer_code`, `customer_name`, `customer_account_id`, `customer_account_code`, `active`, and optional `document_present` (boolean only).
+- Product search: identity (`id`, `code`, `name`), `unit`, catalog `price`, `currency`, `active`. No product `description`.
+- Quote reports (structured and Markdown): public codes (`QUO-*`, `VEN-*`, `CUST-*`, `CLI-*`, `PROD-*`), display names, quantities, persisted `unit_price` / `line_total` / `total` / `currency`, notes, status, and `approval_summary`.
+
+Document remains a **search/resolve input**. A seller can type a tax/company document into `search_customers` or `generate_quote_report`. The stored document is not echoed back.
+
+### Fields forbidden in MCP payloads
+
+- Customer `document` values (full tax/company identifiers)
+- Customer `email`, `phone`, `contact_name`
+- Account passwords and password hashes
+- MCP bearer tokens, token hashes, and `Authorization` headers
+- Caller-supplied prices (`unit_price`, `line_total`, `total` on generate)
+
+REST customer resources may still return `document`, `email`, and `phone`. That is the operator HTTP door, not the AI vendor.
+
+Default Laravel logs must not persist those withheld fields or bearer tokens. `Authorization` headers fail closed (redacted). Complete MCP request/response bodies are not logged at `debug`/`info` in the default configuration.
+
+### Production checklist (operational, not enforced by Laravel)
+
+- Written DPA or equivalent processing terms with the LLM vendor.
+- Disable vendor training and evaluation on customer/quote content when the vendor offers that setting.
+- Configure vendor retention to the shortest period the business accepts. Laravel cannot enforce vendor retention.
+- Use the authenticated web MCP endpoint against this application. Do not paste production catalog or quote data into a personal LLM account or an unmanaged copy of the dataset.
+- HTTPS outside local development (already required for the quote MCP web route).
+
+---
+
 ## What each MCP tool is for
 
 | Name | Role |
 | --- | --- |
 | `search_products` | Find active products by name or code. Cap results (max 10). Prefer exact codes. |
-| `search_customers` | Find customers plus their `CLI-*` account. Never return passwords. |
+| `search_customers` | Find customers plus their `CLI-*` account. Document is search input only. Never return documents, emails, phones, contact names, or passwords. |
 | `generate_quote_report` | Resolve codes, validate, persist one quote, return the report. |
 | `get_quote_report` | Load by id or `QUO-*` number. Read stored money, do not reprice. |
 | `generate-quote-report` | Prompt only. Teaches the model the workflow above. |
