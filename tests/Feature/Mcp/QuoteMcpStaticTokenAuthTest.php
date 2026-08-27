@@ -5,6 +5,7 @@ namespace Tests\Feature\Mcp;
 use App\Logging\RedactSensitiveLogContext;
 use App\Models\Account;
 use App\Models\Customer;
+use App\Models\McpClientToken;
 use App\Models\Product;
 use App\Models\Quote;
 use DateTimeImmutable;
@@ -45,7 +46,7 @@ class QuoteMcpStaticTokenAuthTest extends TestCase
         ]), $this->quoteMcpHeaders('invalid-token'))
             ->assertUnauthorized()
             ->assertDontSee($this->quoteMcpToken)
-            ->assertDontSee((string) config('mcp.quotes.token_hash'));
+            ->assertDontSee($this->quoteMcpTokenHash);
     }
 
     public function test_a_valid_bearer_token_authenticates_the_configured_seller(): void
@@ -64,10 +65,10 @@ class QuoteMcpStaticTokenAuthTest extends TestCase
         $this->assertSame($seller->id, request()->user()?->id);
     }
 
-    public function test_a_missing_server_side_hash_fails_closed(): void
+    public function test_a_missing_stored_client_token_fails_closed(): void
     {
         $this->seedQuoteMcpAuth();
-        config(['mcp.quotes.token_hash' => '']);
+        McpClientToken::query()->delete();
 
         $this->postJson('/mcp/quotes', $this->quoteMcpPayload(1, 'initialize', [
             'protocolVersion' => '2025-11-25',
@@ -230,7 +231,7 @@ class QuoteMcpStaticTokenAuthTest extends TestCase
     public function test_authorization_material_is_redacted_from_log_records(): void
     {
         $this->seedQuoteMcpAuth();
-        $hash = (string) config('mcp.quotes.token_hash');
+        $hash = $this->quoteMcpTokenHash;
 
         $processor = new RedactSensitiveLogContext;
         $record = $processor->process(new LogRecord(
@@ -277,7 +278,7 @@ class QuoteMcpStaticTokenAuthTest extends TestCase
         $combined = implode("\n", $logged);
 
         $this->assertStringNotContainsString($this->quoteMcpToken, $combined);
-        $this->assertStringNotContainsString((string) config('mcp.quotes.token_hash'), $combined);
+        $this->assertStringNotContainsString($this->quoteMcpTokenHash, $combined);
     }
 
     private function assertResponseHasNoTokenMaterial(?string $content): void
@@ -285,7 +286,7 @@ class QuoteMcpStaticTokenAuthTest extends TestCase
         $body = (string) $content;
 
         $this->assertStringNotContainsString($this->quoteMcpToken, $body);
-        $this->assertStringNotContainsString((string) config('mcp.quotes.token_hash'), $body);
+        $this->assertStringNotContainsString($this->quoteMcpTokenHash, $body);
         $this->assertStringNotContainsString('Authorization', $body);
     }
 }

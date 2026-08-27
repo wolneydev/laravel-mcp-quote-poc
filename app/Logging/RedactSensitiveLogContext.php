@@ -16,6 +16,8 @@ class RedactSensitiveLogContext
         'contact_name',
         'document',
         'email',
+        'mcp_administration_token',
+        'mcp_administration_token_hash',
         'mcp_quote_token',
         'mcp_quote_token_hash',
         'password',
