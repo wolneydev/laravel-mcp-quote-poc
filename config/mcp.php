@@ -82,20 +82,36 @@ return [
     | Hash it for this configuration:
     |   php -r "echo hash('sha256', getenv('MCP_QUOTE_TOKEN')), PHP_EOL;"
     |
-    | Manual rotation:
-    |   1. Generate a new raw token.
-    |   2. Compute its SHA-256 hash.
-    |   3. Update MCP_QUOTE_TOKEN_HASH on the Laravel server.
-    |   4. Update MCP_QUOTE_TOKEN in the MCP client environment.
-    |   5. Refresh the Laravel configuration cache (php artisan config:clear
-    |      or php artisan config:cache).
-    |   6. Remove the old client secret.
+    | Quote MCP request authentication uses rows in mcp_client_tokens,
+    | not MCP_QUOTE_TOKEN_HASH. Keep MCP_QUOTE_SELLER_ACCOUNT_CODE for
+    | seller identity resolution.
     |
     */
 
     'quotes' => [
         'token_hash' => env('MCP_QUOTE_TOKEN_HASH'),
         'seller_account_code' => env('MCP_QUOTE_SELLER_ACCOUNT_CODE'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | MCP client token administration
+    |--------------------------------------------------------------------------
+    |
+    | Protects REST endpoints that issue, list, update, and revoke MCP client
+    | tokens. Laravel stores only the SHA-256 hash of the raw administration
+    | bearer token. Do not reuse MCP client tokens as this credential.
+    |
+    | Generate a raw administration token:
+    |   php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
+    |
+    | Hash it for this configuration:
+    |   php -r "echo hash('sha256', getenv('MCP_ADMINISTRATION_TOKEN')), PHP_EOL;"
+    |
+    */
+
+    'administration' => [
+        'token_hash' => env('MCP_ADMINISTRATION_TOKEN_HASH'),
     ],
 
 ];

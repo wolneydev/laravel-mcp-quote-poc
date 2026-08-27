@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Enums\AccountType;
 use App\Models\Account;
+use App\Models\McpClientToken;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -21,15 +22,21 @@ class AuthenticateQuoteMcp
         }
 
         $token = $request->bearerToken();
-        $expectedHash = trim((string) config('mcp.quotes.token_hash'));
         $sellerAccountCode = strtoupper(trim((string) config('mcp.quotes.seller_account_code')));
 
-        if (! is_string($token) || $token === '' || $expectedHash === '' || $sellerAccountCode === '') {
-            abort(Response::HTTP_UNAUTHORIZED);
+        if (! is_string($token) || $token === '' || $sellerAccountCode === '') {
+            abort(Response::HTTP_UNAUTHORIZED, 'Unauthorized');
         }
 
-        if (! hash_equals($expectedHash, hash('sha256', $token))) {
-            abort(Response::HTTP_UNAUTHORIZED);
+        $tokenHash = hash('sha256', $token);
+        $clientToken = McpClientToken::query()->where('token_hash', $tokenHash)->first();
+
+        if (
+            ! $clientToken instanceof McpClientToken
+            || ! hash_equals($clientToken->token_hash, $tokenHash)
+            || ! $clientToken->isUsable()
+        ) {
+            abort(Response::HTTP_UNAUTHORIZED, 'Unauthorized');
         }
 
         $account = Account::query()->where('code', $sellerAccountCode)->first();
@@ -40,7 +47,7 @@ class AuthenticateQuoteMcp
             || $account->active !== true
             || ! str_starts_with($account->code, AccountType::Seller->codePrefix())
         ) {
-            abort(Response::HTTP_UNAUTHORIZED);
+            abort(Response::HTTP_UNAUTHORIZED, 'Unauthorized');
         }
 
         Auth::guard()->setUser($account);
