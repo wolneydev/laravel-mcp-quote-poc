@@ -152,7 +152,7 @@ class CustomerLookup
             'customer_id' => $customer->id,
             'customer_code' => $customer->code,
             'customer_name' => $customer->name,
-            'document' => $customer->document,
+            'document_present' => $customer->document !== null && $customer->document !== '',
             'customer_account_id' => $account?->id,
             'customer_account_code' => $account?->code,
             'active' => $customer->active,

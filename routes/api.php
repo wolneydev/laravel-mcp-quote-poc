@@ -6,9 +6,9 @@ use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\QuoteController;
 use Illuminate\Support\Facades\Route;
 
-Route::apiResource('products', ProductController::class);
-Route::apiResource('customers', CustomerController::class);
-Route::apiResource('accounts', AccountController::class);
+Route::apiResource('products', ProductController::class)->only(['index', 'show']);
+Route::apiResource('customers', CustomerController::class)->only(['index', 'show']);
+Route::apiResource('accounts', AccountController::class)->only(['index', 'show']);
 
 Route::middleware('auth')->group(function (): void {
     Route::post('quotes/{quote}/submit', [QuoteController::class, 'submit'])->name('quotes.submit');

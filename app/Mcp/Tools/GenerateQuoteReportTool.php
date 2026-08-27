@@ -46,7 +46,7 @@ class GenerateQuoteReportTool extends Tool
                 ->min(1)
                 ->max(32),
             'customer' => $schema->string()
-                ->description('Customer code (CUST-*), customer account code (CLI-*), or a unique customer name.')
+                ->description('Customer code (CUST-*), customer account code (CLI-*), unique customer name, or tax/company document. Document is an input only and is never echoed back.')
                 ->min(1)
                 ->max(255)
                 ->required(),

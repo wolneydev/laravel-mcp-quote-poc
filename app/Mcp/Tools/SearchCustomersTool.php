@@ -15,7 +15,7 @@ use Laravel\Mcp\Server\Tool;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 
 #[Name('search_customers')]
-#[Description('Search customers by name, customer code (CUST-*), document, or customer account code (CLI-*). Returns at most 10 results and never returns authentication secrets.')]
+#[Description('Search customers by name, customer code (CUST-*), document, or customer account code (CLI-*). Returns at most 10 results. Document is a search input only and is not returned. Email, phone, contact name, and passwords are never returned.')]
 #[IsReadOnly]
 class SearchCustomersTool extends Tool
 {

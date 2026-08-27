@@ -35,12 +35,17 @@ class SearchCustomersToolTest extends TestCase
                     ->where('customers.0.customer_id', $profile->id)
                     ->where('customers.0.customer_code', 'CUST-000001')
                     ->where('customers.0.customer_name', 'Acme Ltd')
-                    ->where('customers.0.document', '12345678')
+                    ->where('customers.0.document_present', true)
+                    ->missing('customers.0.document')
+                    ->missing('customers.0.email')
+                    ->missing('customers.0.phone')
+                    ->missing('customers.0.contact_name')
                     ->where('customers.0.customer_account_id', $account->id)
                     ->where('customers.0.customer_account_code', 'CLI-000001')
                     ->etc();
             })
-            ->assertDontSee('password');
+            ->assertDontSee('password')
+            ->assertDontSee('12345678');
 
         QuoteServer::actingAs($seller)
             ->tool(SearchCustomersTool::class, ['query' => 'CLI-000001'])

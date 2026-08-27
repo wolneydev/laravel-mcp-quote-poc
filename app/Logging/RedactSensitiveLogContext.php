@@ -13,12 +13,18 @@ class RedactSensitiveLogContext
     private const SENSITIVE_KEYS = [
         'authorization',
         'cookie',
+        'contact_name',
+        'document',
+        'email',
+        'mcp_quote_token',
+        'mcp_quote_token_hash',
+        'password',
+        'phone',
         'php-auth-pw',
+        'token',
+        'token_hash',
         'x-csrf-token',
         'x-xsrf-token',
-        'mcp_quote_token',
-        'token_hash',
-        'mcp_quote_token_hash',
     ];
 
     public function __invoke(Logger|\Monolog\Logger $logger): void
@@ -46,9 +52,7 @@ class RedactSensitiveLogContext
         $redacted = [];
 
         foreach ($values as $key => $value) {
-            $normalizedKey = strtolower((string) $key);
-
-            if (in_array($normalizedKey, self::SENSITIVE_KEYS, true) || str_contains($normalizedKey, 'authorization')) {
+            if ($this->isSensitiveKey((string) $key)) {
                 $redacted[$key] = '[redacted]';
 
                 continue;
@@ -78,5 +82,17 @@ class RedactSensitiveLogContext
         $redacted = preg_replace('/Bearer\s+\S+/i', 'Bearer [redacted]', $value);
 
         return is_string($redacted) ? $redacted : '[redacted]';
+    }
+
+    private function isSensitiveKey(string $key): bool
+    {
+        $normalizedKey = strtolower($key);
+
+        if (in_array($normalizedKey, self::SENSITIVE_KEYS, true)) {
+            return true;
+        }
+
+        return str_contains($normalizedKey, 'authorization')
+            || str_contains($normalizedKey, 'password');
     }
 }
