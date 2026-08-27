@@ -3,6 +3,7 @@
 namespace App\Mcp\Servers;
 
 use App\Mcp\Prompts\GenerateQuoteReportPrompt;
+use App\Mcp\Support\BindLocalQuoteMcpSeller;
 use App\Mcp\Tools\GenerateQuoteReportTool;
 use App\Mcp\Tools\GetQuoteReportTool;
 use App\Mcp\Tools\SearchCustomersTool;
@@ -11,6 +12,7 @@ use Laravel\Mcp\Server;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
 use Laravel\Mcp\Server\Attributes\Version;
+use Laravel\Mcp\Server\Contracts\Transport;
 use Laravel\Mcp\Server\Prompt;
 use Laravel\Mcp\Server\Tool;
 
@@ -39,4 +41,16 @@ class QuoteServer extends Server
     protected array $prompts = [
         GenerateQuoteReportPrompt::class,
     ];
+
+    public function __construct(
+        Transport $transport,
+        private BindLocalQuoteMcpSeller $localQuoteMcpSeller,
+    ) {
+        parent::__construct($transport);
+    }
+
+    protected function boot(): void
+    {
+        $this->localQuoteMcpSeller->bindIfLocalStdio($this->transport);
+    }
 }

@@ -36,26 +36,31 @@ docker compose exec app php artisan migrate --seed --no-interaction
 
 The app is then at [http://localhost:8890](http://localhost:8890). From the host, Postgres is `localhost:5439` with the credentials in `.env` (`laravel` / `secret` by default). Inside Compose, the app uses `DB_HOST=postgres` and port `5432`.
 
-### Quote MCP token
+### Quote MCP (Claude Code local)
 
-Authenticated quote tools talk to `http://localhost:8890/mcp/quotes`. Laravel stores only a SHA-256 hash. Generate a raw token, hash it, then keep the raw value in the MCP client environment only:
-
-```bash
-php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
-# export MCP_QUOTE_TOKEN=<that-value>
-
-php -r "echo hash('sha256', getenv('MCP_QUOTE_TOKEN')), PHP_EOL;"
-```
-
-Put the hash in `.env` as `MCP_QUOTE_TOKEN_HASH`. Set `MCP_QUOTE_SELLER_ACCOUNT_CODE` to an active seller from the seeder (default `VEN-000001`). Put the **raw** token in the MCP client's `MCP_QUOTE_TOKEN`. Do not commit either secret.
-
-`.mcp.json` already points the quote server at the HTTP endpoint and sends `Authorization: Bearer ${env:MCP_QUOTE_TOKEN}`. Restart the MCP client after setting the env var.
-
-The general application MCP (health check) still uses stdio:
+Set `MCP_QUOTE_SELLER_ACCOUNT_CODE` to an active seller from the seeder (default `VEN-000001`). Docker Compose must be running, and `php artisan migrate --seed` must have created that seller. Project `.mcp.json` starts both servers over stdio:
 
 ```bash
 docker compose exec -T app php artisan mcp:start application
+docker compose exec -T app php artisan mcp:start quotes
 ```
+
+After changing `.mcp.json`, reload MCP in Claude Code (`/mcp`). Expected picker:
+
+- **Tools for laravel-application** — `health_check` only
+- **Tools for laravel-quotes** — `search_products`, `search_customers`, `generate_quote_report`, `get_quote_report` (prompt `generate-quote-report`)
+
+A SHA-256 hash in `.env` does not authenticate Quote MCP and is not enough for Claude Code to list quote tools.
+
+### Quote MCP (HTTP clients)
+
+Cursor and other HTTP clients call `http://localhost:8890/mcp/quotes` with a usable `mcp_client_tokens` row. Create one (prints the raw token once; Laravel stores only the hash):
+
+```bash
+docker compose exec app php artisan mcp:client-token:create --expires-in-days=90
+```
+
+Set the **raw** value in the client environment as `MCP_QUOTE_TOKEN`. Do not commit it. `.cursor/mcp.json` may send `Authorization: Bearer ${env:MCP_QUOTE_TOKEN}` for HTTP. You can also create tokens through the administration API.
 
 ### Tests
 

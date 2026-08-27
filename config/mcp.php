@@ -69,22 +69,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Quote MCP static bearer token
+    | Quote MCP seller identity
     |--------------------------------------------------------------------------
     |
-    | The Laravel application stores only the SHA-256 hash of the raw token.
-    | The MCP client keeps the raw token in its own environment as
-    | MCP_QUOTE_TOKEN and sends it as Authorization: Bearer <token>.
+    | MCP_QUOTE_SELLER_ACCOUNT_CODE is the active VEN-* seller used as
+    | $request->user() for Quote MCP. Local Claude Code stdio (mcp:start
+    | quotes) binds this seller in local and testing only. HTTP /mcp/quotes
+    | still requires a usable mcp_client_tokens row, then binds the same
+    | seller. MCP_QUOTE_TOKEN_HASH does not authenticate Quote MCP.
     |
-    | Generate a raw token (at least 32 random bytes):
-    |   php -r "echo bin2hex(random_bytes(32)), PHP_EOL;"
-    |
-    | Hash it for this configuration:
-    |   php -r "echo hash('sha256', getenv('MCP_QUOTE_TOKEN')), PHP_EOL;"
-    |
-    | Quote MCP request authentication uses rows in mcp_client_tokens,
-    | not MCP_QUOTE_TOKEN_HASH. Keep MCP_QUOTE_SELLER_ACCOUNT_CODE for
-    | seller identity resolution.
+    | HTTP clients mint a token (administration API or
+    | php artisan mcp:client-token:create) and send the raw value as
+    | Authorization: Bearer. Store only the SHA-256 hash in the database.
     |
     */
 

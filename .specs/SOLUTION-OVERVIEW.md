@@ -180,25 +180,27 @@ A customer is quote-ready only when the profile is active **and** it has an acti
 
 ## Authentication for the quote MCP
 
-Local `php artisan mcp:start quotes` is stdio. It never hits the HTTP middleware, so `$request->user()` is empty. Authenticated quote generation uses the **web** endpoint.
+Local Claude Code uses stdio (`php artisan mcp:start quotes` from `.mcp.json`). In `local` and `testing` only, that process binds `$request->user()` from `MCP_QUOTE_SELLER_ACCOUNT_CODE`. Production stdio does not auto-bind a seller.
 
-The Laravel app never stores the raw token. The MCP client never puts the token in the prompt or in tool arguments.
+HTTP clients (`POST /mcp/quotes`) still require a usable `mcp_client_tokens` row. `MCP_QUOTE_TOKEN_HASH` does not authenticate Quote MCP.
+
+The Laravel app never stores the raw HTTP token. The MCP client never puts the token in the prompt or in tool arguments.
 
 ```mermaid
 sequenceDiagram
-    participant Client as MCP client
+    participant Client as HTTP MCP client
     participant MW as AuthenticateQuoteMcp
-    participant Cfg as config/mcp.php
+    participant Tokens as mcp_client_tokens
     participant Acc as Seller Account
     participant Tools as Quote tools
 
     Client->>MW: POST /mcp/quotes<br/>Authorization: Bearer raw-token
     MW->>MW: SHA-256 of the bearer token
-    MW->>Cfg: expected hash + VEN-* code
-    alt missing or wrong token, or hash not configured
+    MW->>Tokens: usable unrevoked unexpired row
+    alt missing, unknown, revoked, or expired token
         MW-->>Client: 401
-    else hashes match hash_equals
-        MW->>Acc: find active seller by public code
+    else usable row
+        MW->>Acc: active VEN-* seller from MCP_QUOTE_SELLER_ACCOUNT_CODE
         alt not an active VEN-* seller
             MW-->>Client: 401
         else
@@ -208,11 +210,11 @@ sequenceDiagram
     end
 ```
 
-On the server: `MCP_QUOTE_TOKEN_HASH` and `MCP_QUOTE_SELLER_ACCOUNT_CODE`.
+On the server: `MCP_QUOTE_SELLER_ACCOUNT_CODE` and hashed rows in `mcp_client_tokens`.
 
-On the client: `MCP_QUOTE_TOKEN` (the raw secret).
+On HTTP clients: `MCP_QUOTE_TOKEN` (the raw secret), minted via the administration API or `php artisan mcp:client-token:create`.
 
-Middleware authenticates. `RequiresSellerAccount` still authorizes. Throttling stays on the route. A customer account configured as the MCP identity is rejected. An inactive seller is rejected.
+Middleware authenticates HTTP. Local stdio binds the configured seller. `RequiresSellerAccount` still authorizes. Throttling stays on the HTTP route. A customer account configured as the MCP identity is rejected. An inactive seller is rejected.
 
 ---
 
@@ -281,7 +283,7 @@ REST and MCP share the same tables and the same quote action. If you seed mock d
 
 ## What this system deliberately does not do
 
-No taxes, shipping, inventory, product variants, CRM, PDFs, email delivery, or automatic LLM approval. No OAuth or Sanctum for the quote MCP token (one static hashed bearer token, one seller identity). No `user_id`. No JSON metadata columns on these tables.
+No taxes, shipping, inventory, product variants, CRM, PDFs, email delivery, or automatic LLM approval. No OAuth or Sanctum for Quote MCP (usable `mcp_client_tokens` rows for HTTP, configured seller for local stdio). No `user_id`. No JSON metadata columns on these tables.
 
 Those omissions keep the quote report small enough that an agent can create it without inventing commercial rules the business has not specified yet.
 
