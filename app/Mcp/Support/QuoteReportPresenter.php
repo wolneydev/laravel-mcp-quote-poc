@@ -4,6 +4,7 @@ namespace App\Mcp\Support;
 
 use App\Enums\QuoteStatus;
 use App\Models\Quote;
+use RuntimeException;
 
 class QuoteReportPresenter
 {
@@ -60,6 +61,8 @@ class QuoteReportPresenter
                 : "Quote {$quote->number} has status {$status} and is not approved.",
         ];
 
+        $this->assertPersistedMoneyFields($report);
+
         $report['markdown'] = $this->markdown($report);
 
         return $report;
@@ -88,5 +91,30 @@ class QuoteReportPresenter
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * @param  array<string, mixed>  $report
+     */
+    private function assertPersistedMoneyFields(array $report): void
+    {
+        if (! is_array($report['items']) || $report['items'] === []) {
+            throw new RuntimeException('Quote report is missing line items with persisted prices.');
+        }
+
+        foreach ($report['items'] as $item) {
+            if (! is_array($item) || ! $this->hasMoneyValue($item['unit_price'] ?? null) || ! $this->hasMoneyValue($item['line_total'] ?? null)) {
+                throw new RuntimeException('Quote report is missing persisted unit_price or line_total.');
+            }
+        }
+
+        if (! $this->hasMoneyValue($report['total'] ?? null) || ! filled($report['currency'] ?? null)) {
+            throw new RuntimeException('Quote report is missing persisted total or currency.');
+        }
+    }
+
+    private function hasMoneyValue(mixed $value): bool
+    {
+        return $value !== null && $value !== '';
     }
 }

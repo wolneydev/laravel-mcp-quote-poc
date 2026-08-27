@@ -64,7 +64,10 @@ class GenerateQuoteReportToolTest extends TestCase
                     ->where('approval_summary', 'Quote QUO-'.now()->year.'-000001 has status draft and is not approved.')
                     ->etc();
             })
-            ->assertSee('is not approved');
+            ->assertSee('is not approved')
+            ->assertSee('Total: CAD 1351.50')
+            ->assertSee('Unit price')
+            ->assertSee('Line total');
 
         $this->assertSame(1, Quote::query()->count());
         $quote = Quote::query()->first();
@@ -214,6 +217,35 @@ class GenerateQuoteReportToolTest extends TestCase
                 ],
             ])
             ->assertHasErrors();
+    }
+
+    public function test_it_rejects_caller_provided_prices_and_totals(): void
+    {
+        $seller = Account::factory()->seller()->create();
+        $profile = Customer::factory()->create(['code' => 'CUST-000001']);
+        Account::factory()->customer($profile)->create();
+        Product::factory()->create(['code' => 'PROD-000001', 'price' => '10.00', 'currency' => 'CAD']);
+
+        QuoteServer::actingAs($seller)
+            ->tool(GenerateQuoteReportTool::class, [
+                'customer' => 'CUST-000001',
+                'items' => [
+                    ['product' => 'PROD-000001', 'quantity' => 1, 'unit_price' => '1.00'],
+                ],
+            ])
+            ->assertHasErrors();
+
+        QuoteServer::actingAs($seller)
+            ->tool(GenerateQuoteReportTool::class, [
+                'customer' => 'CUST-000001',
+                'items' => [
+                    ['product' => 'PROD-000001', 'quantity' => 1],
+                ],
+                'total' => '1.00',
+            ])
+            ->assertHasErrors();
+
+        $this->assertSame(0, Quote::query()->count());
     }
 
     public function test_an_inactive_seller_cannot_generate_a_quote_report(): void

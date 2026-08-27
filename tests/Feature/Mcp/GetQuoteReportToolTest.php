@@ -3,6 +3,7 @@
 namespace Tests\Feature\Mcp;
 
 use App\Actions\Quotes\CreateQuoteAction;
+use App\Enums\QuoteStatus;
 use App\Mcp\Servers\QuoteServer;
 use App\Mcp\Tools\GetQuoteReportTool;
 use App\Models\Account;
@@ -46,11 +47,16 @@ class GetQuoteReportToolTest extends TestCase
             ->assertStructuredContent(function ($json) use ($quote): void {
                 $json->where('quote_id', $quote->id)
                     ->where('quote_number', $quote->number)
+                    ->where('status', QuoteStatus::Draft->value)
                     ->where('total', '20.00')
+                    ->where('currency', 'CAD')
                     ->where('items.0.unit_price', '10.00')
                     ->where('items.0.line_total', '20.00')
                     ->etc();
-            });
+            })
+            ->assertSee('Total: CAD 20.00')
+            ->assertSee('Unit price')
+            ->assertSee('Line total');
 
         QuoteServer::actingAs($seller)
             ->tool(GetQuoteReportTool::class, [
