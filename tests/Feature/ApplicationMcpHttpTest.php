@@ -30,15 +30,15 @@ class ApplicationMcpHttpTest extends TestCase
 
     public function test_mcp_http_endpoint_lists_the_health_check_tool(): void
     {
-        $response = $this->postJson('/mcp', [
+        $tools = $this->postJson('/mcp', [
             'jsonrpc' => '2.0',
             'id' => 2,
             'method' => 'tools/list',
             'params' => new \stdClass,
-        ]);
-
-        $response
+        ])
             ->assertOk()
-            ->assertJsonPath('result.tools.0.name', 'health_check');
+            ->json('result.tools');
+
+        $this->assertSame(['health_check'], array_column($tools, 'name'));
     }
 }
