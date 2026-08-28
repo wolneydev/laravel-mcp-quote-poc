@@ -4,11 +4,13 @@ namespace Tests\Feature\Mcp;
 
 use App\Mcp\Lookups\ProductLookup;
 use App\Mcp\Prompts\GenerateQuoteDraftPdfPrompt;
+use App\Mcp\Prompts\GenerateQuoteFromNotesPrompt;
 use App\Mcp\Prompts\GenerateQuoteReportPrompt;
 use App\Mcp\Servers\QuoteServer;
 use App\Mcp\Tools\GenerateQuoteDraftPdfTool;
 use App\Mcp\Tools\GenerateQuoteReportTool;
 use App\Mcp\Tools\GetQuoteReportTool;
+use App\Mcp\Tools\IngestSellerQuoteNotesTool;
 use App\Mcp\Tools\SearchCustomersTool;
 use App\Mcp\Tools\SearchProductsTool;
 use App\Models\Account;
@@ -46,6 +48,36 @@ class QuoteMcpPromptTest extends TestCase
             ->assertSee('Do not auto-generate a PDF')
             ->assertSee('unless the user agrees')
             ->assertSee('saved on the application private storage')
+            ->assertDontSee('CreateQuoteAction')
+            ->assertDontSee('Bearer')
+            ->assertDontSee('MCP_QUOTE_TOKEN');
+    }
+
+    public function test_the_notes_prompt_instructs_ingest_then_search_then_generate_without_file_prices(): void
+    {
+        $seller = Account::factory()->seller()->create();
+
+        QuoteServer::actingAs($seller)
+            ->prompt(GenerateQuoteFromNotesPrompt::class)
+            ->assertOk()
+            ->assertName('generate-quote-from-notes')
+            ->assertSee('/generate-quote-from-notes')
+            ->assertSee('ingest_seller_quote_notes')
+            ->assertSee('search_products')
+            ->assertSee('search_customers')
+            ->assertSee('generate_quote_report')
+            ->assertSee('generate_quote_draft_pdf')
+            ->assertSee('Do not invent a briefing from a filename alone')
+            ->assertSee('candidates')
+            ->assertSee('Never pass them to `generate_quote_report`')
+            ->assertSee('empty briefing')
+            ->assertSee('Never send `unit_price`')
+            ->assertSee('Copy `unit_price`, `line_total`, `total`, and `currency` from the tool result')
+            ->assertSee('not approved')
+            ->assertSee('ask a clear yes/no question')
+            ->assertSee('save a PDF file of this quote')
+            ->assertSee('Show persisted money before this PDF question')
+            ->assertSee('Never paste the raw notes file')
             ->assertDontSee('CreateQuoteAction')
             ->assertDontSee('Bearer')
             ->assertDontSee('MCP_QUOTE_TOKEN');
@@ -106,17 +138,21 @@ class QuoteMcpPromptTest extends TestCase
         $generate = app(GenerateQuoteReportTool::class)->toArray();
         $get = app(GetQuoteReportTool::class)->toArray();
         $pdf = app(GenerateQuoteDraftPdfTool::class)->toArray();
+        $ingest = app(IngestSellerQuoteNotesTool::class)->toArray();
         $searchCustomers = app(SearchCustomersTool::class)->toArray();
         $prompt = (new GenerateQuoteReportPrompt)->toArray();
         $pdfPrompt = (new GenerateQuoteDraftPdfPrompt)->toArray();
+        $notesPrompt = (new GenerateQuoteFromNotesPrompt)->toArray();
 
         $this->assertSame('search_products', $searchProducts['name']);
         $this->assertSame('search_customers', $searchCustomers['name']);
         $this->assertSame('generate_quote_report', $generate['name']);
         $this->assertSame('get_quote_report', $get['name']);
         $this->assertSame('generate_quote_draft_pdf', $pdf['name']);
+        $this->assertSame('ingest_seller_quote_notes', $ingest['name']);
         $this->assertSame('generate-quote-report', $prompt['name']);
         $this->assertSame('generate-quote-draft-pdf', $pdfPrompt['name']);
+        $this->assertSame('generate-quote-from-notes', $notesPrompt['name']);
         $this->assertFalse($prompt['arguments'][0]['required']);
 
         $this->assertArrayHasKey('query', $searchProducts['inputSchema']['properties']);

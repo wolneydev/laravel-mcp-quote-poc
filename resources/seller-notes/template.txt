@@ -1,0 +1,13 @@
+INSTRUCTIONS: One catalog company on a Customer line. Each product on its own line as Nx Product Name. Quantities required. Note amounts are ignored. No emails, phones, or tax documents.
+
+Visit 28/08 — Northwind Industrial Ltd
+Customer: Northwind Industrial Ltd
+
+2x Access Doors and Panels
+4x Safety Rails
+1 Vent Covers
+
+They mentioned R$ 199 but I said catalog price
+Valid until 2026-09-30
+
+Ship to the usual warehouse

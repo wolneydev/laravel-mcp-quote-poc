@@ -26,6 +26,8 @@ The work was split into six modules. Each one is useful on its own, but the late
 
 **MCP quote reports** are a conversation-friendly way to create and reread those quotes. The LLM is guided by a prompt (`/generate-quote-report`). The prompt never prices anything. Tools search the catalog, resolve public codes, then call the same create-quote action as REST.
 
+**Seller notes ingest** is another way to start that same conversation. The home page (`GET /`) is a two-column PoC: left is a notes `.txt` template and UTF-8 upload; right is a Markdown guide for Claude Code and Codex (slash prompts, tools, and a future in-app LLM API). When mentions resolve uniquely, Laravel persists a draft through `CreateQuoteAction` (the same engine as MCP `generate_quote_report`) and shows the result on the page. MCP `ingest_seller_quote_notes` still only returns a briefing. Prices found in the notes are ignored. Obvious PII is stripped from the briefing. OCR of photos or scans is not in this system. An OpenAI-class HTTP client inside Laravel is not implemented.
+
 **Static bearer tokens** exist because an LLM client talking over HTTP is not a logged-in browser session. The client sends a raw token in `Authorization`. Laravel stores only the SHA-256 hash, checks it in constant time, and attaches a configured active seller account to the request. Tools still check that the user is a seller.
 
 **Vendor privacy** is a constraint on the MCP door, not a second quoting system. Tool results go to the MCP client and then into the LLM vendor conversation. Laravel withholds tax documents and contact PII from those payloads, redacts them from default logs, and still prices quotes from the database. Retention, training, and data-processing terms are contractual/client configuration; the application cannot enforce them on the vendor.
@@ -140,6 +142,8 @@ There is also a small general MCP server at `/mcp` (health check). Quote work go
 
 The user-facing command is `/generate-quote-report`. That is an MCP **prompt**, not an HTTP route and not the tool that writes the database.
 
+A second command, `/generate-quote-from-notes`, starts from a notes file instead of typed chat. The seller can also copy the landing template and upload that file on the PoC landing (`GET /`). That POST stores the file and, when lookup is unambiguous, creates the draft on the server (no browser MCP token). Laravel stores the file under `storage/app/private/quotes/notes/`. Viewing the template does not write that folder. The MCP ingest tool still does not write a quote.
+
 The model is supposed to collect missing pieces, search when a name is ambiguous, and only then call `generate_quote_report`. If two customers share a similar name, the tools return candidates. They do not guess.
 
 ```mermaid
@@ -244,6 +248,7 @@ Document remains a **search/resolve input**. A seller can type a tax/company doc
 - Account passwords and password hashes
 - MCP bearer tokens, token hashes, and `Authorization` headers
 - Caller-supplied prices (`unit_price`, `line_total`, `total` on generate)
+- Raw seller notes bodies, note prices, emails, phones, and document-like digit strings in `ingest_seller_quote_notes` output
 
 REST customer resources may still return `document`, `email`, and `phone`. That is the operator HTTP door, not the AI vendor.
 
@@ -268,8 +273,10 @@ Default Laravel logs must not persist those withheld fields or bearer tokens. `A
 | `generate_quote_report` | Resolve codes, validate, persist one quote, return the report. |
 | `get_quote_report` | Load by id or `QUO-*` number. Read stored money, do not reprice. |
 | `generate_quote_draft_pdf` | Render a printable PDF of a persisted quote from stored snapshots and write it to the private local disk. Does not approve or reprice. |
+| `ingest_seller_quote_notes` | Parse pasted UTF-8 or a private `quotes/notes/` file into a briefing (mentions, quantities, sanitized remainder). Does not persist a quote. Ignores prices. Redacts obvious PII from the model-facing result. |
 | `generate-quote-report` | Prompt only. Teaches the model the create-and-review workflow. After the money draft, it must ask whether to save a PDF; it must not auto-save. |
 | `generate-quote-draft-pdf` | Prompt only. Teaches the model to call `generate_quote_draft_pdf` for an existing `QUO-*` and not invent prices or PDF content. |
+| `generate-quote-from-notes` | Prompt only. Teaches the model to ingest notes, search until unambiguous, persist only via `generate_quote_report` (never note prices), then the same money draft and PDF ask. |
 
 Errors are meant to be specific: not found, ambiguous, inactive, wrong account type, bad quantity, duplicate product, mixed currency, unauthorized seller.
 
@@ -290,7 +297,7 @@ REST and MCP share the same tables and the same quote action. If you seed mock d
 
 ## What this system deliberately does not do
 
-No taxes, shipping, inventory, product variants, CRM, email delivery, or automatic LLM approval. Quote-draft PDF via `generate_quote_draft_pdf` is in scope; emailing that PDF is not. No OAuth or Sanctum for Quote MCP (usable `mcp_client_tokens` rows for HTTP, configured seller for local stdio). No `user_id`. No JSON metadata columns on these tables.
+No taxes, shipping, inventory, product variants, CRM, email delivery, or automatic LLM approval. Quote-draft PDF via `generate_quote_draft_pdf` is in scope; emailing that PDF is not. Notes ingest is UTF-8 `.txt` / `.md` (welcome upload or paste); OCR of images or handwritten scans is out of scope. No OAuth or Sanctum for Quote MCP (usable `mcp_client_tokens` rows for HTTP, configured seller for local stdio). No `user_id`. No JSON metadata columns on these tables.
 
 Those omissions keep the quote report small enough that an agent can create it without inventing commercial rules the business has not specified yet.
 
@@ -310,5 +317,6 @@ Imagine a seller in Cursor or another MCP client:
 8. After that draft, the model asks whether the seller wants to save a PDF file. It does not generate a PDF until the seller says yes (or already asked for one). On yes, it calls `generate_quote_draft_pdf`. Laravel writes `storage/app/private/quotes/drafts/{quote_number}-draft.pdf` on the `local` disk and returns metadata (path, filename, money, optional short-lived download URL). Saving the PDF does not approve the quote.
 9. Sellers who already have a `QUO-*` can still use `/generate-quote-draft-pdf` without creating a new quote. That path writes to the same private folder.
 10. Approval still happens through the quote workflow, not by generating the report or the PDF.
+11. Alternatively, the seller uses the PoC landing on `GET /`. Wide screens put the notes path on the **left** (steps, template, upload) and Claude/Codex MCP setup on the **right**. After upload, Laravel writes `quotes/notes/{ulid}.txt`, ingests a briefing, and if catalog matches are unique, persists a draft with the same create engine as `generate_quote_report`. The page shows `QUO-*` and catalog money. The quote is not approved until the seller clicks **Approve** on that page, which runs `SubmitQuoteAction` then `ApproveQuoteAction` (REST workflow). Upload, `generate_quote_report`, and ingest do not approve. REST `/api/quotes/{quote}/approve` stays customer-only. Note prices and obvious PII do not become quote prices or page PII. Ambiguous notes do not persist.
 
 That is the whole solution: a catalog and identities with public codes, a quote engine that snapshots prices, and an authenticated MCP front end that searches in natural language and then writes the same quote a REST client would write.

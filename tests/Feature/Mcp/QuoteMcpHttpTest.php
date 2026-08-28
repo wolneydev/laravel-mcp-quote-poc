@@ -46,7 +46,7 @@ class QuoteMcpHttpTest extends TestCase
             ->json('result.tools');
 
         $this->assertSame(
-            ['search_products', 'search_customers', 'generate_quote_report', 'get_quote_report', 'generate_quote_draft_pdf'],
+            ['search_products', 'search_customers', 'generate_quote_report', 'get_quote_report', 'generate_quote_draft_pdf', 'ingest_seller_quote_notes'],
             array_column($tools, 'name'),
         );
 
@@ -55,7 +55,7 @@ class QuoteMcpHttpTest extends TestCase
             ->json('result.prompts');
 
         $this->assertSame(
-            ['generate-quote-report', 'generate-quote-draft-pdf'],
+            ['generate-quote-report', 'generate-quote-draft-pdf', 'generate-quote-from-notes'],
             array_column($prompts, 'name'),
         );
     }
