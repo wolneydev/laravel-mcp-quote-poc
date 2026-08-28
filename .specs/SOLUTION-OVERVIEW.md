@@ -164,6 +164,10 @@ flowchart TD
 
     Report --> Later["Later: get_quote_report<br/>by quote id or QUO-* number"]
     Later --> Snapshot["Same persisted prices.<br/>Catalog changes do not rewrite history."]
+    Snapshot --> PdfAsk{Model asks: save a PDF file?}
+    PdfAsk -->|yes| PdfTool["Tool: generate_quote_draft_pdf"]
+    PdfTool --> PdfFile["Laravel writes the PDF on the private disk<br/>storage/app/private/quotes/drafts/... Status unchanged."]
+    PdfAsk -->|no| Done["Conversational draft is enough"]
 ```
 
 Typical inputs the model (or the tool) can accept:
@@ -229,6 +233,7 @@ Laravel authenticates the client and minimizes what the model sees. It cannot se
 - Customer search / ambiguous candidates: `customer_id`, `customer_code`, `customer_name`, `customer_account_id`, `customer_account_code`, `active`, and optional `document_present` (boolean only).
 - Product search: identity (`id`, `code`, `name`), `unit`, catalog `price`, `currency`, `active`. No product `description`.
 - Quote reports (structured and Markdown): public codes (`QUO-*`, `VEN-*`, `CUST-*`, `CLI-*`, `PROD-*`), display names, quantities, persisted `unit_price` / `line_total` / `total` / `currency`, notes, status, and `approval_summary`.
+- Quote draft PDF: the same public fields as the report, rendered in Laravel. Tool text is metadata (`quote_number`, `status`, `total`, `currency`, `filename`) plus a short-lived download URL. PDF bytes are not placed in model-facing tool text.
 
 Document remains a **search/resolve input**. A seller can type a tax/company document into `search_customers` or `generate_quote_report`. The stored document is not echoed back.
 
@@ -262,7 +267,9 @@ Default Laravel logs must not persist those withheld fields or bearer tokens. `A
 | `search_customers` | Find customers plus their `CLI-*` account. Document is search input only. Never return documents, emails, phones, contact names, or passwords. |
 | `generate_quote_report` | Resolve codes, validate, persist one quote, return the report. |
 | `get_quote_report` | Load by id or `QUO-*` number. Read stored money, do not reprice. |
-| `generate-quote-report` | Prompt only. Teaches the model the workflow above. |
+| `generate_quote_draft_pdf` | Render a printable PDF of a persisted quote from stored snapshots and write it to the private local disk. Does not approve or reprice. |
+| `generate-quote-report` | Prompt only. Teaches the model the create-and-review workflow. After the money draft, it must ask whether to save a PDF; it must not auto-save. |
+| `generate-quote-draft-pdf` | Prompt only. Teaches the model to call `generate_quote_draft_pdf` for an existing `QUO-*` and not invent prices or PDF content. |
 
 Errors are meant to be specific: not found, ambiguous, inactive, wrong account type, bad quantity, duplicate product, mixed currency, unauthorized seller.
 
@@ -275,7 +282,7 @@ These modules also have CRUD (and quote workflow) under `/api`:
 - Products: list with search/code/active, create, show, update, delete/inactivate.
 - Customers: same idea, plus exact document and email filters.
 - Accounts: list by type, search, create with generated `VEN-*` / `CLI-*` codes.
-- Quotes: create, show, list, edit while draft, submit, approve, reject.
+- Quotes: create, show, list, edit while draft, submit, approve, reject. A short-lived signed GET at `/api/quotes/{quote}/draft-pdf` downloads the Laravel-rendered draft PDF.
 
 REST and MCP share the same tables and the same quote action. If you seed mock data, you can exercise either door against the same catalog.
 
@@ -283,7 +290,7 @@ REST and MCP share the same tables and the same quote action. If you seed mock d
 
 ## What this system deliberately does not do
 
-No taxes, shipping, inventory, product variants, CRM, PDFs, email delivery, or automatic LLM approval. No OAuth or Sanctum for Quote MCP (usable `mcp_client_tokens` rows for HTTP, configured seller for local stdio). No `user_id`. No JSON metadata columns on these tables.
+No taxes, shipping, inventory, product variants, CRM, email delivery, or automatic LLM approval. Quote-draft PDF via `generate_quote_draft_pdf` is in scope; emailing that PDF is not. No OAuth or Sanctum for Quote MCP (usable `mcp_client_tokens` rows for HTTP, configured seller for local stdio). No `user_id`. No JSON metadata columns on these tables.
 
 Those omissions keep the quote report small enough that an agent can create it without inventing commercial rules the business has not specified yet.
 
@@ -299,6 +306,9 @@ Imagine a seller in Cursor or another MCP client:
 4. It calls `search_products` with “premium keyboard”. One active `PROD-*` comes back.
 5. It calls `generate_quote_report` with the seller’s `VEN-*` code, that customer, that product, and quantity 3.
 6. Laravel hashes the bearer token, attaches `VEN-000001` (or whichever seller is configured), checks the seller is allowed to create that quote, snapshots the current keyboard price, and stores `QUO-2026-000001` as a **draft**.
-7. The model returns a report. The seller can later fetch it with `get_quote_report`. Approval still happens through the quote workflow, not by the act of generating the report.
+7. The model returns a report with persisted unit prices, line totals, total, and currency. The seller can later fetch it with `get_quote_report`.
+8. After that draft, the model asks whether the seller wants to save a PDF file. It does not generate a PDF until the seller says yes (or already asked for one). On yes, it calls `generate_quote_draft_pdf`. Laravel writes `storage/app/private/quotes/drafts/{quote_number}-draft.pdf` on the `local` disk and returns metadata (path, filename, money, optional short-lived download URL). Saving the PDF does not approve the quote.
+9. Sellers who already have a `QUO-*` can still use `/generate-quote-draft-pdf` without creating a new quote. That path writes to the same private folder.
+10. Approval still happens through the quote workflow, not by generating the report or the PDF.
 
 That is the whole solution: a catalog and identities with public codes, a quote engine that snapshots prices, and an authenticated MCP front end that searches in natural language and then writes the same quote a REST client would write.

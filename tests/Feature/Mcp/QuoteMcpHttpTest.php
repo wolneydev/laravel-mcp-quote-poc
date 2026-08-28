@@ -46,13 +46,18 @@ class QuoteMcpHttpTest extends TestCase
             ->json('result.tools');
 
         $this->assertSame(
-            ['search_products', 'search_customers', 'generate_quote_report', 'get_quote_report'],
+            ['search_products', 'search_customers', 'generate_quote_report', 'get_quote_report', 'generate_quote_draft_pdf'],
             array_column($tools, 'name'),
         );
 
-        $this->postJson('/mcp/quotes', $this->quoteMcpPayload(3, 'prompts/list'), $this->quoteMcpHeaders())
+        $prompts = $this->postJson('/mcp/quotes', $this->quoteMcpPayload(3, 'prompts/list'), $this->quoteMcpHeaders())
             ->assertOk()
-            ->assertJsonPath('result.prompts.0.name', 'generate-quote-report');
+            ->json('result.prompts');
+
+        $this->assertSame(
+            ['generate-quote-report', 'generate-quote-draft-pdf'],
+            array_column($prompts, 'name'),
+        );
     }
 
     public function test_api_routes_do_not_expose_a_duplicate_mcp_endpoint(): void

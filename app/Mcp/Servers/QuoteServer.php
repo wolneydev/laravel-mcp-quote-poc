@@ -2,8 +2,10 @@
 
 namespace App\Mcp\Servers;
 
+use App\Mcp\Prompts\GenerateQuoteDraftPdfPrompt;
 use App\Mcp\Prompts\GenerateQuoteReportPrompt;
 use App\Mcp\Support\BindLocalQuoteMcpSeller;
+use App\Mcp\Tools\GenerateQuoteDraftPdfTool;
 use App\Mcp\Tools\GenerateQuoteReportTool;
 use App\Mcp\Tools\GetQuoteReportTool;
 use App\Mcp\Tools\SearchCustomersTool;
@@ -18,7 +20,7 @@ use Laravel\Mcp\Server\Tool;
 
 #[Name('Quote Server')]
 #[Version('0.0.1')]
-#[Instructions('Quote report MCP server. Use /generate-quote-report (prompt generate-quote-report) to collect seller, customer, product, and quantity, then call generate_quote_report. Search with search_products and search_customers. Retrieve persisted reports with get_quote_report. REST quote CRUD remains on /api/quotes.')]
+#[Instructions('Quote report MCP server. Use /generate-quote-report (prompt generate-quote-report) to collect seller, customer, product, and quantity, then call generate_quote_report. Search with search_products and search_customers. Retrieve persisted reports with get_quote_report. Use /generate-quote-draft-pdf (prompt generate-quote-draft-pdf) to ask Laravel to render a printable PDF of a persisted quote. REST quote CRUD remains on /api/quotes.')]
 class QuoteServer extends Server
 {
     /**
@@ -29,6 +31,7 @@ class QuoteServer extends Server
         SearchCustomersTool::class,
         GenerateQuoteReportTool::class,
         GetQuoteReportTool::class,
+        GenerateQuoteDraftPdfTool::class,
     ];
 
     protected array $resources = [
@@ -40,6 +43,7 @@ class QuoteServer extends Server
      */
     protected array $prompts = [
         GenerateQuoteReportPrompt::class,
+        GenerateQuoteDraftPdfPrompt::class,
     ];
 
     public function __construct(

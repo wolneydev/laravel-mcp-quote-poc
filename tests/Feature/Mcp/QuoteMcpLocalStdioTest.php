@@ -28,11 +28,11 @@ class QuoteMcpLocalStdioTest extends TestCase
         $context = $this->startLocalQuoteServer()->createContext();
 
         $this->assertSame(
-            ['search_products', 'search_customers', 'generate_quote_report', 'get_quote_report'],
+            ['search_products', 'search_customers', 'generate_quote_report', 'get_quote_report', 'generate_quote_draft_pdf'],
             $context->tools()->map(fn ($tool): string => $tool->name())->all(),
         );
         $this->assertSame(
-            ['generate-quote-report'],
+            ['generate-quote-report', 'generate-quote-draft-pdf'],
             $context->prompts()->map(fn ($prompt): string => $prompt->name())->all(),
         );
     }
